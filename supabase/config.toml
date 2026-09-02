@@ -1,0 +1,17 @@
+project_id = "youtube-clone"
+
+[functions.translate-comment]
+verify_jwt = true
+entrypoint = "./functions/translate-comment/index.ts"
+
+[functions.moderate-comment]
+verify_jwt = true
+entrypoint = "./functions/moderate-comment/index.ts"
+
+[functions.download-video]
+verify_jwt = true
+entrypoint = "./functions/download-video/index.ts"
+
+[functions.razorpay-payment]
+verify_jwt = true
+entrypoint = "./functions/razorpay-payment/index.ts"
