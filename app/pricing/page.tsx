@@ -7,13 +7,27 @@ import { supabase, SubscriptionPlan } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import PaymentModal from "@/components/PaymentModal";
 
+type PlanConfig = {
+  gradient: string;
+  badge: string;
+  badgeColor: string;
+  highlight: boolean;
+};
+
+const PLAN_CONFIGS: Record<string, PlanConfig> = {
+  free: { gradient: "from-neutral-700 to-neutral-900", badge: "", badgeColor: "", highlight: false },
+  bronze: { gradient: "from-amber-700 to-amber-900", badge: "Popular", badgeColor: "bg-amber-100 text-amber-700", highlight: false },
+  silver: { gradient: "from-gray-600 to-gray-800", badge: "Best Value", badgeColor: "bg-gray-200 text-gray-700", highlight: true },
+  gold: { gradient: "from-yellow-600 to-yellow-800", badge: "Premium", badgeColor: "bg-yellow-100 text-yellow-700", highlight: false },
+};
+
 export default function PricingPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
-  const [currentPlanName, setCurrentPlanName] = useState<string>("free");
+  const [currentPlanName, setCurrentPlanName] = useState("free");
 
   useEffect(() => {
     void fetchPlans();
@@ -33,10 +47,10 @@ export default function PricingPage() {
   };
 
   const fetchCurrentPlan = async () => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const { data: session } = await supabase.auth.getSession();
     const token = session.session?.access_token;
-    if (!token) return;
+    if (!token || !supabaseUrl) return;
 
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/razorpay-payment`, {
@@ -75,13 +89,6 @@ export default function PricingPage() {
     );
   }
 
-  const planConfig: Record<string, { gradient: string; badge: string; badgeColor: string; highlight: boolean }> = {
-    free: { gradient: "from-neutral-700 to-neutral-900", badge: "", badgeColor: "", highlight: false },
-    bronze: { gradient: "from-amber-700 to-amber-900", badge: "Popular", badgeColor: "bg-amber-100 text-amber-700", highlight: false },
-    silver: { gradient: "from-gray-600 to-gray-800", badge: "Best Value", badgeColor: "bg-gray-200 text-gray-700", highlight: true },
-    gold: { gradient: "from-yellow-600 to-yellow-800", badge: "Premium", badgeColor: "bg-yellow-100 text-yellow-700", highlight: false },
-  };
-
   return (
     <div className="px-4 py-8 max-w-6xl mx-auto">
       <div className="text-center mb-10">
@@ -93,22 +100,30 @@ export default function PricingPage() {
         </p>
       </div>
 
-      {/* Plan cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         {plans.map((plan) => {
-          const config = planConfig[plan.name] || planConfig.free;
+          const config = PLAN_CONFIGS[plan.name] || PLAN_CONFIGS.free;
           const isCurrent = plan.name === currentPlanName;
           const isFree = plan.name === "free";
 
+          const cardBorder = config.highlight
+            ? "border-blue-500 shadow-lg scale-[1.02]"
+            : "border-neutral-200 shadow-sm";
+          const cardHover = isCurrent ? "opacity-75" : "hover:shadow-md hover:border-neutral-300";
+
+          let btnClass = "bg-neutral-900 text-white hover:bg-neutral-800";
+          if (isCurrent) btnClass = "bg-neutral-100 text-neutral-500 cursor-default";
+          else if (isFree) btnClass = "bg-neutral-100 text-neutral-700 hover:bg-neutral-200";
+          else if (config.highlight) btnClass = "bg-blue-600 text-white hover:bg-blue-700";
+
+          const btnLabel = isCurrent
+            ? "Current Plan"
+            : isFree
+            ? "Your default"
+            : `Get ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`;
+
           return (
-            <div
-              key={plan.id}
-              className={`relative bg-white rounded-2xl border-2 transition-all ${
-                config.highlight
-                  ? "border-blue-500 shadow-lg scale-[1.02]"
-                  : "border-neutral-200 shadow-sm"
-              } ${isCurrent ? "opacity-75" : "hover:shadow-md hover:border-neutral-300"}`}
-            >
+            <div key={plan.id} className={`relative bg-white rounded-2xl border-2 transition-all ${cardBorder} ${cardHover}`}>
               {config.badge && (
                 <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-medium ${config.badgeColor}`}>
                   {config.badge}
@@ -122,9 +137,7 @@ export default function PricingPage() {
                 </div>
                 <p className="text-xs opacity-80 mb-3">{plan.description}</p>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">
-                    ${plan.price.toFixed(2)}
-                  </span>
+                  <span className="text-3xl font-bold">${plan.price.toFixed(2)}</span>
                   <span className="text-sm opacity-70">/{plan.validity_period}</span>
                 </div>
               </div>
@@ -142,17 +155,9 @@ export default function PricingPage() {
                 <button
                   onClick={() => handleSelectPlan(plan)}
                   disabled={isCurrent}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isCurrent
-                      ? "bg-neutral-100 text-neutral-500 cursor-default"
-                      : isFree
-                      ? "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                      : config.highlight
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "bg-neutral-900 text-white hover:bg-neutral-800"
-                  }`}
+                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${btnClass}`}
                 >
-                  {isCurrent ? "Current Plan" : isFree ? "Your default" : `Get ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`}
+                  {btnLabel}
                 </button>
               </div>
             </div>
@@ -160,7 +165,6 @@ export default function PricingPage() {
         })}
       </div>
 
-      {/* Feature comparison table */}
       <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
         <h2 className="text-lg font-semibold text-neutral-900 p-5 border-b border-neutral-200">
           Feature comparison
@@ -180,7 +184,7 @@ export default function PricingPage() {
             <tbody>
               <ComparisonRow label="Monthly price" values={plans.map(p => `$${p.price.toFixed(2)}`)} />
               <ComparisonRow label="Streaming quality" values={plans.map(p => p.streaming_quality)} />
-              <ComparisonRow label="Daily downloads" values={plans.map(p => `${p.daily_download_limit}`} />
+              <ComparisonRow label="Daily downloads" values={plans.map(p => `${p.daily_download_limit}`)} />
               <ComparisonRow label="Daily watch hours" values={plans.map(p => p.max_watch_hours === 0 ? "Unlimited" : `${p.max_watch_hours} hrs`)} />
               <ComparisonRow label="Ad-free viewing" values={plans.map(p => p.ad_free)} boolean />
               <ComparisonRow label="Offline downloads" values={plans.map(p => p.offline_downloads)} boolean />
