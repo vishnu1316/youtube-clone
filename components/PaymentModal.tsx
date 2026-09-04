@@ -104,7 +104,7 @@ export default function PaymentModal({
     userName?: string;
     userEmail?: string;
   }) => {
-    const Razorpay = (window as Record<string, unknown>).Razorpay as unknown as new (opts: Record<string, unknown>) => {
+    const Razorpay = (window as unknown as Record<string, unknown>).Razorpay as unknown as new (opts: Record<string, unknown>) => {
       open: () => void;
       on: (event: string, handler: (resp: unknown) => void) => void;
     };
