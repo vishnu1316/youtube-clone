@@ -142,9 +142,10 @@ export default function PaymentModal({
     };
 
     const rzp = new Razorpay(options);
-    rzp.on("payment.failed", (resp: { error: { description: string } }) => {
+    rzp.on("payment.failed", (resp: unknown) => {
+      const err = resp as { error?: { description?: string } };
       setState("error");
-      setMessage(resp?.error?.description || "Payment failed. Please try again.");
+      setMessage(err?.error?.description || "Payment failed. Please try again.");
     });
     rzp.open();
   };
