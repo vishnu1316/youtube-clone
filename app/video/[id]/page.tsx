@@ -15,6 +15,8 @@ import {
   Share2,
   Bookmark,
   Loader2,
+  Lock,
+  Crown,
 } from "lucide-react";
 
 export default function VideoPage({
@@ -38,6 +40,8 @@ export default function VideoPage({
   const [showFullDesc, setShowFullDesc] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [hasPremiumAccess, setHasPremiumAccess] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
 
   useEffect(() => {
     fetchVideo();
@@ -50,9 +54,44 @@ export default function VideoPage({
       fetchLikes();
       fetchWatchLater();
       addToHistory();
+      checkPremiumAccess();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video]);
+
+  const checkPremiumAccess = async () => {
+    if (!video?.is_premium) {
+      setHasPremiumAccess(true);
+      setCheckingAccess(false);
+      return;
+    }
+    if (!user) {
+      setHasPremiumAccess(false);
+      setCheckingAccess(false);
+      return;
+    }
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    if (!token || !supabaseUrl) {
+      setHasPremiumAccess(false);
+      setCheckingAccess(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/razorpay-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "status" }),
+      });
+      const data = await res.json();
+      const planName = data.subscription?.plan?.name;
+      setHasPremiumAccess(planName && planName !== "free" && data.subscription?.status === "active");
+    } catch {
+      setHasPremiumAccess(false);
+    }
+    setCheckingAccess(false);
+  };
 
   const fetchVideo = async () => {
     setLoading(true);
@@ -238,8 +277,20 @@ export default function VideoPage({
     <div className="px-4 py-4 max-w-[1800px] mx-auto">
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 max-w-4xl">
-          <div className="w-full aspect-video rounded-xl overflow-hidden bg-black">
-            {video.video_url ? (
+          <div className="w-full aspect-video rounded-xl overflow-hidden bg-black relative">
+            {video.is_premium && !hasPremiumAccess && !checkingAccess ? (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-900 text-white">
+                <Lock size={48} className="mb-4 text-neutral-400" />
+                <h3 className="text-lg font-semibold mb-2">Premium content</h3>
+                <p className="text-sm text-neutral-400 mb-4 text-center max-w-xs">
+                  This video is exclusive to paid subscribers. Upgrade your plan to watch.
+                </p>
+                <Link href="/pricing" className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                  <Crown size={16} />
+                  Upgrade now
+                </Link>
+              </div>
+            ) : video.video_url ? (
               video.video_url.startsWith("https://www.youtube.com") ||
               video.video_url.startsWith("https://youtu.be") ? (
                 <iframe
@@ -254,6 +305,12 @@ export default function VideoPage({
               <div className="w-full h-full flex items-center justify-center text-neutral-400">
                 No video source available
               </div>
+            )}
+            {video.is_premium && (
+              <span className="absolute top-2 right-2 px-2 py-1 bg-yellow-500 text-black text-xs font-semibold rounded flex items-center gap-1">
+                <Crown size={12} />
+                Premium
+              </span>
             )}
           </div>
 

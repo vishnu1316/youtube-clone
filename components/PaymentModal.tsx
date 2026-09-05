@@ -7,13 +7,16 @@ import { supabase, SubscriptionPlan } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
 type PaymentState = "idle" | "creating-order" | "checkout" | "verifying" | "success" | "error" | "cancelled";
+type BillingPeriod = "monthly" | "quarterly" | "yearly";
 
 export default function PaymentModal({
   plan,
+  billingPeriod = "monthly",
   onClose,
   onSuccess,
 }: {
   plan: SubscriptionPlan;
+  billingPeriod?: BillingPeriod;
   onClose: () => void;
   onSuccess: (result: { planName: string; endDate: string; invoiceNumber: string }) => void;
 }) {
@@ -63,7 +66,11 @@ export default function PaymentModal({
     };
 
     try {
-      orderResult = await callEdgeFunction({ action: "create-order", planId: plan.id });
+      orderResult = await callEdgeFunction({
+        action: "create-order",
+        planId: plan.id,
+        billingPeriod,
+      });
     } catch {
       setState("error");
       setMessage("Could not connect to payment service. Please try again.");
@@ -79,7 +86,6 @@ export default function PaymentModal({
     setTransactionId(orderResult.transactionId || "");
     setState("checkout");
 
-    // Load Razorpay checkout script
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
@@ -120,7 +126,7 @@ export default function PaymentModal({
       amount: order.amount,
       currency: order.currency || "INR",
       name: "YouTube Clone",
-      description: `${order.planName} Plan Subscription`,
+      description: `${order.planName} Plan Subscription (${billingPeriod})`,
       order_id: order.orderId,
       prefill: {
         name: order.userName || "",
@@ -215,6 +221,13 @@ export default function PaymentModal({
     return null;
   }
 
+  const periodLabel = billingPeriod === "quarterly" ? "3 months" : billingPeriod === "yearly" ? "1 year" : "1 month";
+  const displayPrice = billingPeriod === "quarterly"
+    ? plan.quarterly_price || plan.price * 3
+    : billingPeriod === "yearly"
+    ? plan.yearly_price || plan.price * 12
+    : plan.price;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
@@ -239,12 +252,12 @@ export default function PaymentModal({
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm text-neutral-600">Price</span>
             <span className="text-sm font-medium text-neutral-900">
-              ${plan.price.toFixed(2)} <span className="text-neutral-400">/{plan.validity_period}</span>
+              ${displayPrice.toFixed(2)} <span className="text-neutral-400">/ {periodLabel}</span>
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-neutral-600">Validity</span>
-            <span className="text-sm font-medium text-neutral-900 capitalize">{plan.validity_period}</span>
+            <span className="text-sm font-medium text-neutral-900 capitalize">{billingPeriod}</span>
           </div>
         </div>
 
@@ -268,7 +281,8 @@ export default function PaymentModal({
               <Check size={28} className="text-green-600" />
             </div>
             <p className="text-sm font-medium text-neutral-900">{message}</p>
-            <p className="text-xs text-neutral-500 mt-2">Redirecting to your dashboard...</p>
+            <p className="text-xs text-neutral-500 mt-2">A confirmation email has been sent to your inbox.</p>
+            <p className="text-xs text-neutral-500 mt-1">Redirecting to your dashboard...</p>
           </div>
         )}
 
@@ -307,7 +321,7 @@ export default function PaymentModal({
             onClick={() => void startPayment()}
             className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
-            Proceed to pay ${plan.price.toFixed(2)}
+            Proceed to pay ${displayPrice.toFixed(2)}
           </button>
         )}
       </div>

@@ -305,6 +305,7 @@ export default function SubscriptionPage() {
       {showRenewModal && currentPlan && (
         <PaymentModal
           plan={currentPlan}
+          billingPeriod={currentPlan.validity_period || "monthly"}
           onClose={() => setShowRenewModal(false)}
           onSuccess={() => {
             setShowRenewModal(false);

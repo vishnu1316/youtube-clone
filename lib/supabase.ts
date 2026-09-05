@@ -41,6 +41,7 @@ export type Video = {
   duration: string;
   category: string;
   created_at: string;
+  is_premium: boolean;
   channel?: Channel;
 };
 
@@ -141,6 +142,8 @@ export type SubscriptionPlan = {
   features: string[];
   validity_period: "monthly" | "quarterly" | "yearly";
   sort_order: number;
+  quarterly_price: number;
+  yearly_price: number;
 };
 
 export type UserSubscription = {

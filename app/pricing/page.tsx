@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Crown, Loader2 } from "lucide-react";
+import { Check, Crown, Loader2, RefreshCw, ArrowUpCircle } from "lucide-react";
 import { supabase, SubscriptionPlan } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import PaymentModal from "@/components/PaymentModal";
@@ -21,6 +21,10 @@ const PLAN_CONFIGS: Record<string, PlanConfig> = {
   gold: { gradient: "from-yellow-600 to-yellow-800", badge: "Premium", badgeColor: "bg-yellow-100 text-yellow-700", highlight: false },
 };
 
+const PLAN_RANK: Record<string, number> = { free: 0, bronze: 1, silver: 2, gold: 3 };
+
+type BillingPeriod = "monthly" | "quarterly" | "yearly";
+
 export default function PricingPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -28,6 +32,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [currentPlanName, setCurrentPlanName] = useState("free");
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
 
   useEffect(() => {
     void fetchPlans();
@@ -67,6 +72,19 @@ export default function PricingPage() {
     }
   };
 
+  const getPriceForPeriod = (plan: SubscriptionPlan, period: BillingPeriod): number => {
+    if (plan.name === "free") return 0;
+    if (period === "quarterly") return plan.quarterly_price || plan.price * 3;
+    if (period === "yearly") return plan.yearly_price || plan.price * 12;
+    return plan.price;
+  };
+
+  const getPeriodLabel = (period: BillingPeriod): string => {
+    if (period === "quarterly") return "3 months";
+    if (period === "yearly") return "year";
+    return "month";
+  };
+
   const handleSelectPlan = (plan: SubscriptionPlan) => {
     if (!user) {
       router.push("/auth/signin");
@@ -89,9 +107,11 @@ export default function PricingPage() {
     );
   }
 
+  const currentRank = PLAN_RANK[currentPlanName] ?? 0;
+
   return (
     <div className="px-4 py-8 max-w-6xl mx-auto">
-      <div className="text-center mb-10">
+      <div className="text-center mb-8">
         <h1 className="text-3xl sm:text-4xl font-bold text-neutral-900 mb-3">
           Choose your plan
         </h1>
@@ -100,11 +120,36 @@ export default function PricingPage() {
         </p>
       </div>
 
+      {/* Billing period toggle */}
+      <div className="flex justify-center mb-8">
+        <div className="inline-flex bg-neutral-100 rounded-full p-1">
+          {(["monthly", "quarterly", "yearly"] as BillingPeriod[]).map((period) => (
+            <button
+              key={period}
+              onClick={() => setBillingPeriod(period)}
+              className={`px-4 sm:px-5 py-2 rounded-full text-sm font-medium capitalize transition-colors ${
+                billingPeriod === period
+                  ? "bg-neutral-900 text-white"
+                  : "text-neutral-600 hover:text-neutral-900"
+              }`}
+            >
+              {period}
+              {period === "quarterly" && <span className="hidden sm:inline ml-1 text-xs opacity-60">-10%</span>}
+              {period === "yearly" && <span className="hidden sm:inline ml-1 text-xs opacity-60">-20%</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         {plans.map((plan) => {
           const config = PLAN_CONFIGS[plan.name] || PLAN_CONFIGS.free;
           const isCurrent = plan.name === currentPlanName;
           const isFree = plan.name === "free";
+          const planRank = PLAN_RANK[plan.name] ?? 0;
+          const isUpgrade = planRank > currentRank;
+          const isDowngrade = planRank < currentRank && !isFree;
+          const displayPrice = getPriceForPeriod(plan, billingPeriod);
 
           const cardBorder = config.highlight
             ? "border-blue-500 shadow-lg scale-[1.02]"
@@ -116,11 +161,11 @@ export default function PricingPage() {
           else if (isFree) btnClass = "bg-neutral-100 text-neutral-700 hover:bg-neutral-200";
           else if (config.highlight) btnClass = "bg-blue-600 text-white hover:bg-blue-700";
 
-          const btnLabel = isCurrent
-            ? "Current Plan"
-            : isFree
-            ? "Your default"
-            : `Get ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`;
+          let btnLabel = `Get ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`;
+          if (isCurrent) btnLabel = "Current Plan";
+          else if (isFree) btnLabel = "Your default";
+          else if (isUpgrade) btnLabel = `Upgrade to ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`;
+          else if (isDowngrade) btnLabel = `Downgrade to ${plan.name.charAt(0).toUpperCase() + plan.name.slice(1)}`;
 
           return (
             <div key={plan.id} className={`relative bg-white rounded-2xl border-2 transition-all ${cardBorder} ${cardHover}`}>
@@ -137,9 +182,14 @@ export default function PricingPage() {
                 </div>
                 <p className="text-xs opacity-80 mb-3">{plan.description}</p>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">${plan.price.toFixed(2)}</span>
-                  <span className="text-sm opacity-70">/{plan.validity_period}</span>
+                  <span className="text-3xl font-bold">${displayPrice.toFixed(2)}</span>
+                  <span className="text-sm opacity-70">/{getPeriodLabel(billingPeriod)}</span>
                 </div>
+                {!isFree && billingPeriod !== "monthly" && (
+                  <p className="text-xs opacity-60 mt-1">
+                    Save {billingPeriod === "quarterly" ? "10%" : "20%"} vs monthly
+                  </p>
+                )}
               </div>
 
               <div className="p-5">
@@ -157,12 +207,33 @@ export default function PricingPage() {
                   disabled={isCurrent}
                   className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${btnClass}`}
                 >
+                  {isUpgrade && <ArrowUpCircle size={16} className="inline mr-1 -mt-0.5" />}
                   {btnLabel}
                 </button>
+
+                {!isFree && (
+                  <p className="text-xs text-neutral-400 mt-2 text-center">
+                    Auto-renews {billingPeriod}. Cancel anytime.
+                  </p>
+                )}
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Renewal & upgrade policy info */}
+      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-6">
+        <h3 className="text-sm font-medium text-neutral-900 mb-2 flex items-center gap-2">
+          <RefreshCw size={16} className="text-blue-600" />
+          Renewal &amp; upgrade policy
+        </h3>
+        <ul className="text-sm text-neutral-600 space-y-1.5">
+          <li>Plans auto-renew at the end of each billing period. Cancel anytime to stop renewal.</li>
+          <li>Upgrades take effect immediately and are prorated for the remaining billing period.</li>
+          <li>Downgrades take effect at the end of your current billing period.</li>
+          <li>Expired subscriptions automatically revert to the Free plan while preserving your data and watch history.</li>
+        </ul>
       </div>
 
       <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
@@ -183,6 +254,8 @@ export default function PricingPage() {
             </thead>
             <tbody>
               <ComparisonRow label="Monthly price" values={plans.map(p => `$${p.price.toFixed(2)}`)} />
+              <ComparisonRow label="Quarterly price" values={plans.map(p => `$${(p.quarterly_price || 0).toFixed(2)}`)} />
+              <ComparisonRow label="Yearly price" values={plans.map(p => `$${(p.yearly_price || 0).toFixed(2)}`)} />
               <ComparisonRow label="Streaming quality" values={plans.map(p => p.streaming_quality)} />
               <ComparisonRow label="Daily downloads" values={plans.map(p => `${p.daily_download_limit}`)} />
               <ComparisonRow label="Daily watch hours" values={plans.map(p => p.max_watch_hours === 0 ? "Unlimited" : `${p.max_watch_hours} hrs`)} />
@@ -199,6 +272,7 @@ export default function PricingPage() {
       {selectedPlan && (
         <PaymentModal
           plan={selectedPlan}
+          billingPeriod={billingPeriod}
           onClose={() => setSelectedPlan(null)}
           onSuccess={handlePaymentSuccess}
         />

@@ -45,6 +45,7 @@ Deno.serve(async (req: Request) => {
     // ---- CREATE ORDER ----
     if (action === "create-order") {
       const planId = body.planId as string;
+      const billingPeriod = (body.billingPeriod as string) || "monthly";
       if (!planId) return jsonResponse({ error: "Missing planId" }, 400);
 
       const { data: plan, error: planError } = await serviceClient
@@ -55,6 +56,12 @@ Deno.serve(async (req: Request) => {
 
       if (planError || !plan) return jsonResponse({ error: "Plan not found" }, 404);
       if (plan.name === "free") return jsonResponse({ error: "Cannot purchase free plan" }, 400);
+
+      const amount = billingPeriod === "quarterly"
+        ? (plan.quarterly_price || plan.price * 3)
+        : billingPeriod === "yearly"
+        ? (plan.yearly_price || plan.price * 12)
+        : plan.price;
 
       // Check for existing pending transaction for same plan
       const { data: existingTx } = await serviceClient
@@ -71,17 +78,18 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({
           orderId: existingTx.razorpay_order_id,
           transactionId: existingTx.id,
-          amount: plan.price * 100,
+          amount: Math.round(amount * 100),
           currency: "INR",
           keyId: RAZORPAY_KEY_ID,
           planName: plan.name,
-          planPrice: plan.price,
+          planPrice: amount,
+          userName,
+          userEmail,
           message: "Existing pending order found",
         });
       }
 
-      // Create Razorpay order
-      const amountInPaise = Math.round(plan.price * 100);
+      const amountInPaise = Math.round(amount * 100);
       const orderPayload = {
         amount: amountInPaise,
         currency: "INR",
@@ -90,6 +98,7 @@ Deno.serve(async (req: Request) => {
           user_id: userId,
           plan_id: planId,
           plan_name: plan.name,
+          billing_period: billingPeriod,
         },
       };
 
@@ -117,7 +126,6 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Payment service unavailable" }, 502);
       }
 
-      // Create transaction record
       const invoiceNumber = `INV-${Date.now()}-${userId.slice(0, 6)}`;
       const { data: tx, error: txError } = await serviceClient
         .from("payment_transactions")
@@ -126,10 +134,10 @@ Deno.serve(async (req: Request) => {
           plan_id: planId,
           razorpay_order_id: orderId,
           invoice_number: invoiceNumber,
-          amount: plan.price,
+          amount: amount,
           currency: "INR",
           payment_status: "created",
-          validity_period: plan.validity_period,
+          validity_period: billingPeriod,
         })
         .select()
         .single();
@@ -145,7 +153,7 @@ Deno.serve(async (req: Request) => {
         currency: "INR",
         keyId: RAZORPAY_KEY_ID,
         planName: plan.name,
-        planPrice: plan.price,
+        planPrice: amount,
         userName,
         userEmail,
       });
@@ -158,7 +166,6 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Missing payment details" }, 400);
       }
 
-      // Verify signature if secret is configured
       if (RAZORPAY_KEY_SECRET) {
         const crypto = globalThis.crypto;
         const encoder = new TextEncoder();
@@ -173,7 +180,6 @@ Deno.serve(async (req: Request) => {
           .map(b => b.toString(16).padStart(2, "0")).join("");
 
         if (expectedSignature !== razorpaySignature) {
-          // Mark transaction as failed
           await serviceClient
             .from("payment_transactions")
             .update({ payment_status: "failed", razorpay_payment_id: razorpayPaymentId, razorpay_signature: razorpaySignature, updated_at: new Date().toISOString() })
@@ -183,7 +189,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Fetch transaction
       const { data: tx, error: txError } = await serviceClient
         .from("payment_transactions")
         .select("*, plan:subscription_plans(*)")
@@ -195,7 +200,6 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Transaction not found" }, 404);
       }
 
-      // Check for duplicate payment
       if (tx.payment_status === "paid") {
         return jsonResponse({
           success: true,
@@ -205,7 +209,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Calculate subscription dates
       const now = new Date();
       let endDate = new Date(now);
       const validity = tx.validity_period || "monthly";
@@ -213,7 +216,6 @@ Deno.serve(async (req: Request) => {
       else if (validity === "quarterly") endDate.setMonth(endDate.getMonth() + 3);
       else if (validity === "yearly") endDate.setFullYear(endDate.getFullYear() + 1);
 
-      // Update transaction as paid
       const { error: updateErr } = await serviceClient
         .from("payment_transactions")
         .update({
@@ -230,14 +232,12 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Failed to update transaction" }, 500);
       }
 
-      // Cancel any existing active subscription
       await serviceClient
         .from("user_subscriptions")
         .update({ status: "cancelled" })
         .eq("user_id", userId)
         .eq("status", "active");
 
-      // Create new subscription
       const { error: subErr } = await serviceClient
         .from("user_subscriptions")
         .insert({
@@ -252,10 +252,29 @@ Deno.serve(async (req: Request) => {
         return jsonResponse({ error: "Payment verified but subscription creation failed" }, 500);
       }
 
+      // Send confirmation email
+      const planName = (tx.plan as { name: string })?.name || "unknown";
+      const planPrice = tx.amount;
+      const invoiceNum = tx.invoice_number || "N/A";
+      const startDateStr = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      const endDateStr = endDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      const validityLabel = validity === "quarterly" ? "3 months" : validity === "yearly" ? "1 year" : "1 month";
+
+      await sendConfirmationEmail(userEmail, userName, {
+        planName,
+        planPrice,
+        invoiceNum,
+        paymentId: razorpayPaymentId,
+        orderId: razorpayOrderId,
+        startDateStr,
+        endDateStr,
+        validityLabel,
+      });
+
       return jsonResponse({
         success: true,
         message: "Payment verified and subscription activated",
-        planName: (tx.plan as { name: string })?.name || "unknown",
+        planName,
         startDate: now.toISOString(),
         endDate: endDate.toISOString(),
         invoiceNumber: tx.invoice_number,
@@ -300,7 +319,7 @@ Deno.serve(async (req: Request) => {
         .from("user_subscriptions")
         .select("*, plan:subscription_plans(*)")
         .eq("user_id", userId)
-        .eq("status", "active")
+        .in("status", ["active", "expired"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -312,8 +331,7 @@ Deno.serve(async (req: Request) => {
         .order("created_at", { ascending: false })
         .limit(20);
 
-      // Check if subscription expired
-      if (sub && sub.expires_at && new Date(sub.expires_at) < new Date()) {
+      if (sub && sub.expires_at && new Date(sub.expires_at) < new Date() && sub.status === "active") {
         await serviceClient
           .from("user_subscriptions")
           .update({ status: "expired" })
@@ -322,10 +340,7 @@ Deno.serve(async (req: Request) => {
       }
 
       return jsonResponse({
-        subscription: sub ? {
-          ...sub,
-          plan: sub.plan,
-        } : null,
+        subscription: sub ? { ...sub, plan: sub.plan } : null,
         transactions: transactions || [],
       });
     }
@@ -336,6 +351,71 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Payment service error" }, 500);
   }
 });
+
+async function sendConfirmationEmail(email: string, name: string, details: {
+  planName: string;
+  planPrice: number;
+  invoiceNum: string;
+  paymentId: string;
+  orderId: string;
+  startDateStr: string;
+  endDateStr: string;
+  validityLabel: string;
+}) {
+  const subject = `Subscription Confirmation - ${details.planName.toUpperCase()} Plan`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <h1 style="color: #2563eb;">Subscription Activated!</h1>
+      <p>Hi ${name},</p>
+      <p>Your subscription to the <strong>${details.planName.toUpperCase()}</strong> plan has been successfully activated.</p>
+      
+      <h2 style="color: #333; font-size: 18px;">Subscription Details</h2>
+      <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Plan</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold; text-transform: capitalize;">${details.planName}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Validity</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${details.validityLabel}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Start Date</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${details.startDateStr}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Expiry Date</td><td style="padding: 8px; border-bottom: 1px solid #eee;">${details.endDateStr}</td></tr>
+      </table>
+
+      <h2 style="color: #333; font-size: 18px;">Transaction Information</h2>
+      <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Invoice Number</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-family: monospace;">${details.invoiceNum}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Payment ID</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-family: monospace;">${details.paymentId}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Order ID</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-family: monospace;">${details.orderId}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #eee; color: #666;">Amount</td><td style="padding: 8px; border-bottom: 1px solid #eee; font-weight: bold;">${details.planPrice.toFixed(2)}</td></tr>
+      </table>
+
+      <p style="background: #f0f9ff; padding: 12px; border-radius: 8px; color: #666; font-size: 14px;">
+        Need help? Contact our support team at support@youtubeclone.app
+      </p>
+      <p style="color: #999; font-size: 12px; margin-top: 20px;">This is an automated email. Please do not reply.</p>
+    </div>
+  `;
+
+  const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+
+  if (RESEND_API_KEY) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "YouTube Clone <noreply@youtubeclone.app>",
+          to: [email],
+          subject,
+          html,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send confirmation email via Resend:", err);
+    }
+  } else {
+    console.log(`[Email] Confirmation email would be sent to ${email}: ${subject}`);
+  }
+}
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

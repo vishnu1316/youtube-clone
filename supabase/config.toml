@@ -15,3 +15,7 @@ entrypoint = "./functions/download-video/index.ts"
 [functions.razorpay-payment]
 verify_jwt = true
 entrypoint = "./functions/razorpay-payment/index.ts"
+
+[functions.auto-expiry-subscriptions]
+verify_jwt = false
+entrypoint = "./functions/auto-expiry-subscriptions/index.ts"
