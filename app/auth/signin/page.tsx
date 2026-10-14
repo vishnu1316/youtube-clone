@@ -35,7 +35,7 @@ export default function SignInPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/");
+      router.push("/auth/verify");
     }
   };
 

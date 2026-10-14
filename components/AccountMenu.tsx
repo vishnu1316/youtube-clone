@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
-import { User, LogOut, Settings, UserCircle, Crown, Download } from "lucide-react";
+import { User, LogOut, Settings, UserCircle, Crown, Download, Shield } from "lucide-react";
 
 export default function AccountMenu() {
   const { user, channel, signOut } = useAuth();
@@ -83,6 +83,14 @@ export default function AccountMenu() {
           >
             <Download size={18} className="text-neutral-500" />
             Downloads
+          </Link>
+          <Link
+            href="/security"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-4 px-4 py-2.5 text-sm text-neutral-800 hover:bg-neutral-100 transition-colors"
+          >
+            <Shield size={18} className="text-neutral-500" />
+            Account security
           </Link>
           <Link
             href="/subscription"

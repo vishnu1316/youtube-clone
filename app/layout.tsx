@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/lib/auth-context";
+import { ThemeProvider } from "@/lib/theme-context";
 
 export const metadata: Metadata = {
   title: "YouTube Clone",
@@ -14,11 +15,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <AuthProvider>
-          <Navbar />
-          <main className="pt-14 sm:pt-14 md:pl-56">{children}</main>
+          <ThemeProvider>
+            <Navbar />
+            <main className="pt-14 sm:pt-14 md:pl-56">{children}</main>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

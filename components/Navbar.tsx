@@ -17,8 +17,29 @@ import {
   Download,
   Crown,
   X,
+  Sun,
+  Moon,
+  Shield,
 } from "lucide-react";
 import AccountMenu from "./AccountMenu";
+import { useTheme } from "@/lib/theme-context";
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      onClick={toggleTheme}
+      className="p-2 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+      aria-label="Toggle theme"
+    >
+      {theme === "dark" ? (
+        <Sun size={22} className="text-neutral-600 dark:text-neutral-300" />
+      ) : (
+        <Moon size={22} className="text-neutral-600 dark:text-neutral-300" />
+      )}
+    </button>
+  );
+}
 
 const sidebarLinks = [
   { label: "Home", icon: Home, href: "/" },
@@ -28,6 +49,7 @@ const sidebarLinks = [
   { label: "Watch Later", icon: Clock, href: "/watch-later" },
   { label: "Downloads", icon: Download, href: "/downloads" },
   { label: "Subscription", icon: Crown, href: "/subscription" },
+  { label: "Security", icon: Shield, href: "/security" },
 ];
 
 export default function Navbar() {
@@ -44,7 +66,7 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-white border-b border-neutral-200 flex items-center justify-between px-2 sm:px-4">
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-2 sm:px-4">
         <div className="flex items-center gap-2 sm:gap-4">
           <button
             onClick={() => setMobileOpen(true)}
@@ -100,11 +122,12 @@ export default function Navbar() {
             <Bell size={22} className="text-neutral-800" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-brand rounded-full" />
           </button>
+          <ThemeToggle />
           <AccountMenu />
         </div>
       </header>
 
-      <div className="sm:hidden fixed top-14 left-0 right-0 z-40 h-14 bg-white border-b border-neutral-200 flex items-center px-2">
+      <div className="sm:hidden fixed top-14 left-0 right-0 z-40 h-14 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center px-2">
         <form onSubmit={handleSearch} className="flex flex-1 items-center">
           <input
             type="text"
@@ -123,7 +146,7 @@ export default function Navbar() {
         </form>
       </div>
 
-      <aside className="hidden md:flex fixed left-0 top-14 bottom-0 z-40 w-56 bg-white border-r border-neutral-200 flex-col">
+      <aside className="hidden md:flex fixed left-0 top-14 bottom-0 z-40 w-56 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex-col">
         <nav className="py-3">
           {sidebarLinks.map(({ label, icon: Icon, href }) => (
             <Link
@@ -144,7 +167,7 @@ export default function Navbar() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="relative w-64 h-full bg-white border-r border-neutral-200 flex flex-col">
+          <aside className="relative w-64 h-full bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-neutral-200">
               <span className="text-brand text-xl font-bold">YouTube</span>
               <button

@@ -19,3 +19,11 @@ entrypoint = "./functions/razorpay-payment/index.ts"
 [functions.auto-expiry-subscriptions]
 verify_jwt = false
 entrypoint = "./functions/auto-expiry-subscriptions/index.ts"
+
+[functions.track-login]
+verify_jwt = true
+entrypoint = "./functions/track-login/index.ts"
+
+[functions.verify-otp]
+verify_jwt = true
+entrypoint = "./functions/verify-otp/index.ts"
